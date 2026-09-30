@@ -1,0 +1,29 @@
+# Pinned base environment for the GLM-OCR service (venv or container).
+#
+# This is the authoritative environment: it is the one in which the service
+# was measured on the reference machine (Intel UHD 770 iGPU, i7-13700K,
+# WSL2) and in which the unit + E2E test suite passes.
+#
+# Notes:
+#   * torch is installed SEPARATELY, before this file, from the CPU wheel
+#     index (the +cpu local tag does not exist on PyPI):
+#         pip install torch==2.14.0+cpu --index-url https://download.pytorch.org/whl/cpu
+#   * the three optimum* packages are deliberately NOT listed here: they come
+#     from pinned git commits with --no-deps (see "Environment" in README.md
+#     and the Dockerfile), because their declared dependency ranges predate
+#     the transformers 5.5.4 that the GLM-OCR processor requires.
+#   * nvidia-* packages are transitive deps of the CUDA torch wheel and are
+#     not needed — the OpenVINO path never touches CUDA.
+
+openvino==2026.4.0
+openvino-tokenizers==2026.4.0.0
+transformers==5.5.4
+tokenizers==0.22.2
+huggingface_hub==1.33.0
+safetensors==0.8.0
+numpy==2.4.6
+pillow==12.3.0
+nncf==3.4.0
+fastapi==0.142.0
+uvicorn[standard]==0.54.0
+httpx==0.28.1

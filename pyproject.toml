@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "glm-ocr-service"
+version = "0.1.0"
+description = "OpenAI-compatible OCR microservice: GLM-OCR (fp16 OpenVINO) on Intel iGPU/CPU — page images in, Markdown out"
+readme = "README.md"
+requires-python = ">=3.11"
+
+# Runtime dependencies. The exact pinned versions used on the reference
+# machine (Intel UHD 770 iGPU, WSL2) are in docker/requirements.txt; the
+# ranges here must be satisfied by that set.
+dependencies = [
+    "openvino>=2025.0",
+    "openvino-tokenizers>=2025.0",
+    "transformers>=5.5.0,<5.6",
+    "tokenizers>=0.20.0",
+    "huggingface_hub>=0.34.0",
+    "safetensors>=0.4.0",
+    "numpy>=1.26",
+    "Pillow>=10.0",
+    "nncf>=2.15",
+    "torch>=2.1.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+tests = ["httpx>=0.27"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["glm_ocr_service"]
