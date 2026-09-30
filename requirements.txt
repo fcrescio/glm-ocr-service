@@ -2,18 +2,24 @@
 #
 # This is the authoritative environment: it is the one in which the service
 # was measured on the reference machine (Intel UHD 770 iGPU, i7-13700K,
-# WSL2) and in which the unit + E2E test suite passes.
+# WSL2) and in which the unit + E2E test suite passes. It was verified from
+# scratch on 2026-09-30 by building a fresh venv with exactly this file
+# (plus the two steps noted below) and running the full test suite.
+#
+# Install order (the Dockerfile does exactly this):
+#   1. torch + torchvision from the CPU wheel index (the +cpu local tags do
+#      not exist on PyPI):  pip install torch==2.14.0+cpu torchvision==0.29.0+cpu --index-url https://download.pytorch.org/whl/cpu
+#   2. pip install -r requirements.txt
+#   3. the three optimum* packages from pinned git commits with --no-deps
+#      (see README.md "Environment"): their declared dependency ranges
+#      predate the transformers 5.5.4 the GLM-OCR processor requires, so
+#      THIS file remains the authoritative environment.
 #
 # Notes:
-#   * torch is installed SEPARATELY, before this file, from the CPU wheel
-#     index (the +cpu local tag does not exist on PyPI):
-#         pip install torch==2.14.0+cpu --index-url https://download.pytorch.org/whl/cpu
-#   * the three optimum* packages are deliberately NOT listed here: they come
-#     from pinned git commits with --no-deps (see "Environment" in README.md
-#     and the Dockerfile), because their declared dependency ranges predate
-#     the transformers 5.5.4 that the GLM-OCR processor requires.
 #   * nvidia-* packages are transitive deps of the CUDA torch wheel and are
 #     not needed — the OpenVINO path never touches CUDA.
+#   * onnx is an import-time dependency of the optimum.intel.openvino runtime
+#     (via optimum.exporters.onnx.config -> optimum.onnx.graph_transformations).
 
 openvino==2026.4.0
 openvino-tokenizers==2026.4.0.0
@@ -27,3 +33,9 @@ nncf==3.4.0
 fastapi==0.142.0
 uvicorn[standard]==0.54.0
 httpx==0.28.1
+requests==2.34.2
+onnx==1.23.0
+onnx-ir==1.0.0
+onnxscript==0.7.2
+protobuf==7.36.2
+ml-dtypes==0.6.0

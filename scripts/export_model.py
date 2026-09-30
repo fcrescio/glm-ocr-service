@@ -22,12 +22,12 @@ What it runs (the official command from the OpenVINO GLM-OCR notebook):
     optimum-cli export openvino -m <model> --task image-text-to-text \
         --weight-format fp16 --trust-remote-code <output-dir>
 
-Output (~2.7 GB, 4-part layout)
+Output (~2.1–2.7 GB, 4-part layout)
     openvino_language_model.{xml,bin}          stateful LLM (16 layers, GQA 16q/8kv, head_dim 128)
     openvino_vision_embeddings_model.{xml,bin} patch-embed conv
-    openvino_vision_embeddings_merger.{xml,bin} vision blocks + merger
+    openvino_vision_embeddings_merger*.{xml,bin} vision blocks + merger
     openvino_text_embeddings_model.{xml,bin}   token embeddings
-    + processor / tokenizer / chat-template files
+    (+ OV tokenizer/detokenizer and processor / chat-template files)
     The 4-part runtime keeps its OpenVINO compile cache in <output-dir>/model_cache/
     — keep the directory writable.
 
@@ -39,12 +39,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-PARTS = [
-    "openvino_language_model",
-    "openvino_vision_embeddings_model",
-    "openvino_vision_embeddings_merger",
-    "openvino_text_embeddings_model",
-]
+PARTS = {
+    "openvino_language_model": ["openvino_language_model"],
+    "openvino_vision_embeddings_model": ["openvino_vision_embeddings_model"],
+    "vision merger": ["openvino_vision_embeddings_merger", "openvino_vision_embeddings_merger_model"],
+    "openvino_text_embeddings_model": ["openvino_text_embeddings_model"],
+}
 
 
 def main():
@@ -72,8 +72,10 @@ def main():
     if r.returncode != 0:
         sys.exit("export failed (rc=%d)" % r.returncode)
 
-    # verify the 4-part layout
-    missing = [n for n in PARTS if not (out / (n + ".xml")).is_file()]
+    # verify the 4-part layout (the merger part name varies with exporter
+    # version: with or without the trailing "_model")
+    missing = [name for name, alts in PARTS.items()
+               if not any((out / (a + ".xml")).is_file() for a in alts)]
     if missing:
         sys.exit("export finished but parts are missing: %s (dir: %s)" % (missing, out))
     total_gb = sum(f.stat().st_size for f in out.rglob("*.bin")) / 1e9

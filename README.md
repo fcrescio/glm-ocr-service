@@ -96,9 +96,10 @@ Python 3.11. Install **in this order**:
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
 
-# 1. CPU torch from the wheel index (never touches CUDA; needed for the
-#    processor's return_tensors="pt" and the streamer)
-pip install torch==2.14.0+cpu --index-url https://download.pytorch.org/whl/cpu
+# 1. CPU torch + torchvision from the wheel index (never touches CUDA; torch
+#    is needed for the processor's return_tensors="pt" and the streamer,
+#    torchvision for the GLM-4V video-processor half of the processor family)
+pip install torch==2.14.0+cpu torchvision==0.29.0+cpu --index-url https://download.pytorch.org/whl/cpu
 
 # 2. the pinned base environment
 pip install -r requirements.txt

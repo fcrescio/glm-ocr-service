@@ -43,13 +43,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /opt/glm-ocr-service
 
-# torch from the CPU wheel index (the default PyPI torch wheel drags in
-# multi-GB nvidia-* libraries this service never uses; torch is needed for
-# the processor's return_tensors="pt" and the generation streamer).
-# Fallback to the PyPI default wheel if the exact +cpu tag is ever missing
-# from the index (larger image, still functional).
-RUN pip install torch==2.14.0+cpu --index-url https://download.pytorch.org/whl/cpu \
-    || pip install torch==2.14.0
+# torch + torchvision from the CPU wheel index (the default PyPI torch wheel
+# drags in multi-GB nvidia-* libraries this service never uses; torch is
+# needed for the processor's return_tensors="pt" and the generation
+# streamer, torchvision for the GLM-4V video-processor half of the
+# AutoProcessor family). Fallback to the PyPI default wheels if the exact
+# +cpu tags are ever missing from the index (larger image, still functional).
+RUN pip install torch==2.14.0+cpu torchvision==0.29.0+cpu --index-url https://download.pytorch.org/whl/cpu \
+    || pip install torch==2.14.0 torchvision==0.29.0
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt
