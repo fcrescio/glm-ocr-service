@@ -95,6 +95,20 @@ class GLMOCRModel:
         self.load_s = round(time.time() - t0, 2)
         log.info("GLM-OCR loaded in %.1fs (device=%s, dir=%s)", self.load_s, device, model_dir)
 
+    def execution_devices(self) -> dict[str, list[str]]:
+        parts = {
+            "language": self.model.language_model.request,
+            "text_embeddings": self.model.language_model.text_emb_request,
+            "vision": self.model.vision_embeddings.request,
+            "vision_merger": self.model.vision_embeddings_merger.request,
+        }
+        devices = {}
+        for name, request in parts.items():
+            if request is not None:
+                compiled = request.get_compiled_model() if hasattr(request, "get_compiled_model") else request
+                devices[name] = list(compiled.get_property("EXECUTION_DEVICES"))
+        return devices
+
     # ------------------------------------------------------------------ images
 
     def cap_image(self, img: Image.Image) -> Image.Image:

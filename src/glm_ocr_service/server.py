@@ -233,6 +233,7 @@ def build_app(
             "model": model_id,
             "device": model.device,
             "load_s": model.load_s,
+            "execution_devices": model.execution_devices() if hasattr(model, "execution_devices") else {},
         }
 
     @app.get("/v1/models")
