@@ -17,4 +17,4 @@ services:
     environment:
       LD_LIBRARY_PATH: /usr/lib/wsl/lib
       HF_HOME: /models/hf-cache
-    command: ["--device", "GPU", "--port", "8080"]
+    command: ["--device", "GPU", "--port", "8080", "--preserve-marginalia"]

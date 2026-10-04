@@ -140,7 +140,11 @@ region cropping, official text/table/formula prompts, PDF rendering at **200 DPI
 8192 tokens per region and repetition penalty 1.1. Recognition remains OpenVINO
 on **Intel GPU**; CUDA is not used. `max_workers=1` is intentional: the iGPU runtime
 is single-flight. This is quality alignment, not a claim to reproduce NVIDIA
-benchmark throughput. The SDK's default header/footer filtering is unchanged.
+benchmark throughput. The generic launcher retains the SDK's default header/footer
+filtering. `--preserve-marginalia` recognizes textual headers, footers, page numbers
+and footnotes; the Megadoc Compose deployment enables this archival policy so
+recipient/supplier context is not intentionally discarded. The response metadata
+records this choice. Image regions remain image evidence, not invented text.
 
 `POST /v1/parse` accepts JSON:
 

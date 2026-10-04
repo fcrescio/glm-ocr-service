@@ -44,17 +44,28 @@ class LocalRecognitionClient:
             return {"error": str(exc)}, 500
 
 
+def sdk_config(preserve_marginalia=False):
+    from glmocr.config import load_config
+
+    config = load_config(mode="selfhosted", layout_device="cpu").pipeline
+    config.max_workers = 1
+    config.layout.device = "cpu"
+    config.layout.cuda_visible_devices = ""
+    if preserve_marginalia:
+        labels = {"header", "footer", "number", "footnote", "aside_text", "reference"}
+        mapping = config.layout.label_task_mapping
+        mapping["text"] = list(dict.fromkeys(mapping["text"] + sorted(labels)))
+        mapping["abandon"] = [label for label in mapping["abandon"] if label not in labels]
+    return config
+
+
 class DocumentParser:
-    def __init__(self, model):
-        from glmocr.config import load_config
+    def __init__(self, model, preserve_marginalia=False):
         from glmocr.pipeline import Pipeline
 
-        config = load_config(mode="selfhosted", layout_device="cpu").pipeline
+        config = sdk_config(preserve_marginalia)
         # Keep official task prompts, 200 DPI, 8192 tokens and repetition penalty.
         # The iGPU runtime is single-flight; do not queue 32 concurrent regions.
-        config.max_workers = 1
-        config.layout.device = "cpu"
-        config.layout.cuda_visible_devices = ""
         self.pipeline = Pipeline(config)
         self.recognition = LocalRecognitionClient(model)
         self.pipeline.ocr_client = self.recognition
@@ -71,6 +82,7 @@ class DocumentParser:
         self.pipeline.layout_detector.process = checked_layout
         self.pipeline.start()
         self.config = config
+        self.preserve_marginalia = preserve_marginalia
         self._lock = threading.Lock()
 
     def parse(self, data_url, max_tokens=8192):
@@ -104,4 +116,5 @@ class DocumentParser:
                     "metadata": {"pipeline": "glmocr-sdk", "layout_model": self.config.layout.model_dir,
                                  "layout_device": "cpu", "pdf_dpi": self.config.page_loader.pdf_dpi,
                                  "max_workers": 1, "pixel_cap": self.recognition.model.pixel_cap,
-                                 "region_max_tokens": max_tokens}}
+                                 "region_max_tokens": max_tokens,
+                                 "preserve_marginalia": self.preserve_marginalia}}

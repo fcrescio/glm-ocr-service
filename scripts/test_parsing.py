@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from glm_ocr_service.model import InferenceError
-from glm_ocr_service.parsing import LocalRecognitionClient
+from glm_ocr_service.parsing import LocalRecognitionClient, sdk_config
 from glm_ocr_service.server import build_app
 
 
@@ -39,6 +39,10 @@ def main():
     assert config.page_loader.max_tokens == 8192
     assert config.page_loader.task_prompt_mapping["table"] == "Table Recognition:"
     assert config.page_loader.repetition_penalty == 1.1
+    archive = sdk_config(preserve_marginalia=True)
+    assert "header" in archive.layout.label_task_mapping["text"]
+    assert "header" not in archive.layout.label_task_mapping["abandon"]
+    assert "header" in sdk_config().layout.label_task_mapping["abandon"]
     print("Parsing API, SDK defaults, authentication and truncation checks passed")
 
 
