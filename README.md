@@ -312,6 +312,12 @@ page instead.
   commercial use**.
 # Profiling and isolated decoder compression
 
+`--layout-text-threshold 0.15` optionally lowers only textual-class detection
+thresholds. Table/image thresholds retain SDK defaults; changing the global
+threshold can cause low-confidence full-page tables to suppress text regions.
+This option is experimental, not enabled by Docker Compose. Use
+`scripts/probe_layout.py` to inspect class scores and boxes before changing it.
+
 `/v1/parse` returns per-region `prepare_s`, image dimensions and `timings`:
 `multimodal_s` (vision plus embedding preparation), `prefill_s` (first language
 forward), `decode_s` (remaining language forwards) and `language_calls`.

@@ -45,10 +45,14 @@ def main():
     ap.add_argument("--pixel-cap", type=int, default=0, help="Optional additional image cap; 0 uses the model processor defaults")
     ap.add_argument("--no-layout", action="store_true", help="Run only the low-level OpenAI recognition endpoint")
     ap.add_argument("--preserve-marginalia", action="store_true", help="Recognize textual headers/footers instead of the SDK's default exclusion")
+    ap.add_argument("--layout-text-threshold", type=float,
+                    help="Experimental textual-class threshold; table/image thresholds unchanged")
     ap.add_argument("--prompt", default="Text Recognition:")
     ap.add_argument("--api-key", default=os.environ.get("GLM_OCR_API_KEY"))
     ap.add_argument("--log-level", default="INFO")
     args = ap.parse_args()
+    if args.layout_text_threshold is not None and not 0 < args.layout_text_threshold <= 1:
+        ap.error("layout text threshold must be in (0, 1]")
 
     logging.basicConfig(
         level=getattr(logging, args.log_level.upper(), logging.INFO),
@@ -67,7 +71,8 @@ def main():
         import torch
 
         torch.set_num_threads(min(8, os.cpu_count() or 1))
-        document_parser = DocumentParser(model, preserve_marginalia=args.preserve_marginalia)
+        document_parser = DocumentParser(model, preserve_marginalia=args.preserve_marginalia,
+                                        text_threshold=args.layout_text_threshold)
 
     def _force_exit(signum, _frame):
         logging.getLogger("glm_ocr_service").info("signal %d: forcing process exit after grace period", signum)

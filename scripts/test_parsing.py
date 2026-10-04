@@ -43,6 +43,17 @@ def main():
     assert "header" in archive.layout.label_task_mapping["text"]
     assert "header" not in archive.layout.label_task_mapping["abandon"]
     assert "header" in sdk_config().layout.label_task_mapping["abandon"]
+    tuned = sdk_config(preserve_marginalia=True, text_threshold=0.15)
+    assert tuned.layout.threshold == 0.3
+    assert tuned.layout.threshold_by_class["header"] == 0.15
+    assert "table" not in tuned.layout.threshold_by_class
+    assert "image" not in tuned.layout.threshold_by_class
+    for value in (0, -1, 1.1):
+        try:
+            sdk_config(text_threshold=value)
+            raise AssertionError("Invalid text threshold accepted")
+        except ValueError:
+            pass
     import threading
     raw = [[{"label": "image", "content": None}]]
     document_parser = DocumentParser.__new__(DocumentParser)

@@ -49,7 +49,7 @@ class LocalRecognitionClient:
             return {"error": str(exc)}, 500
 
 
-def sdk_config(preserve_marginalia=False):
+def sdk_config(preserve_marginalia=False, text_threshold=None):
     from glmocr.config import load_config
 
     config = load_config(mode="selfhosted", layout_device="cpu").pipeline
@@ -61,14 +61,21 @@ def sdk_config(preserve_marginalia=False):
         mapping = config.layout.label_task_mapping
         mapping["text"] = list(dict.fromkeys(mapping["text"] + sorted(labels)))
         mapping["abandon"] = [label for label in mapping["abandon"] if label not in labels]
+    if text_threshold is not None:
+        if not 0 < text_threshold <= 1:
+            raise ValueError("text threshold must be in (0, 1]")
+        config.layout.threshold_by_class = {
+            **(config.layout.threshold_by_class or {}),
+            **{label: text_threshold for label in config.layout.label_task_mapping["text"]},
+        }
     return config
 
 
 class DocumentParser:
-    def __init__(self, model, preserve_marginalia=False):
+    def __init__(self, model, preserve_marginalia=False, text_threshold=None):
         from glmocr.pipeline import Pipeline
 
-        config = sdk_config(preserve_marginalia)
+        config = sdk_config(preserve_marginalia, text_threshold)
         # Keep official task prompts, 200 DPI, 8192 tokens and repetition penalty.
         # The iGPU runtime is single-flight; do not queue 32 concurrent regions.
         self.pipeline = Pipeline(config)
@@ -138,4 +145,6 @@ class DocumentParser:
                                  "layout_device": "cpu", "pdf_dpi": self.config.page_loader.pdf_dpi,
                                  "max_workers": 1, "pixel_cap": self.recognition.model.pixel_cap,
                                  "region_max_tokens": max_tokens,
+                                 "layout_threshold": self.config.layout.threshold,
+                                 "layout_threshold_by_class": self.config.layout.threshold_by_class,
                                  "preserve_marginalia": self.preserve_marginalia}}
