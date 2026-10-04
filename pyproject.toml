@@ -26,6 +26,10 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "httpx>=0.27",
+    "glmocr>=0.1.5",
+    "opencv-python-headless>=4.10.0",
+    "sentencepiece>=0.2.0",
+    "accelerate>=1.13.0",
 ]
 
 [project.optional-dependencies]

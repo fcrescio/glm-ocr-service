@@ -71,7 +71,7 @@ class GLMOCRModel:
         self,
         model_dir: str,
         device: str = "GPU",
-        pixel_cap: int = 700_000,
+        pixel_cap: int = 0,
         default_prompt: str = "Text Recognition:",
     ):
         from transformers import AutoProcessor
@@ -114,7 +114,7 @@ class GLMOCRModel:
     def cap_image(self, img: Image.Image) -> Image.Image:
         """Downscale (never upscale) so w*h <= pixel_cap, dims a multiple of 28."""
         w, h = img.size
-        if w * h <= self.pixel_cap:
+        if not self.pixel_cap or w * h <= self.pixel_cap:
             return img
         scale = (self.pixel_cap / (w * h)) ** 0.5
         w2 = max(28, int(w * scale) // 28 * 28)
@@ -191,6 +191,7 @@ class GLMOCRModel:
         top_p: Optional[float] = None,
         stop: Optional[list] = None,
         stream_cb: Optional[Callable[[str], None]] = None,
+        repetition_penalty: float = 1.0,
     ) -> GenerationResult:
         """Generate under the process-wide lock. With `stream_cb`, decoded text
         chunks are delivered as they are produced; the full sequence is still
@@ -201,6 +202,7 @@ class GLMOCRModel:
                 "max_new_tokens": max_tokens,
                 "num_beams": 1,
                 "do_sample": bool(temperature and temperature > 0),
+                "repetition_penalty": repetition_penalty,
             }
             if kwargs["do_sample"]:
                 kwargs["temperature"] = temperature

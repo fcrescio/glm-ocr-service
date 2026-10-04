@@ -39,3 +39,7 @@ onnx-ir==1.0.0
 onnxscript==0.7.2
 protobuf==7.36.2
 ml-dtypes==0.6.0
+glmocr @ git+https://github.com/zai-org/GLM-OCR.git@cef4d0ea120d1741f5cefe8985eee45f6c8eff1d
+opencv-python-headless>=4.10.0
+sentencepiece>=0.2.0
+accelerate>=1.13.0
