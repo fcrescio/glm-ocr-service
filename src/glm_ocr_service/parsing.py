@@ -80,7 +80,9 @@ class DocumentParser:
         def checked_layout(*args, **kwargs):
             start = time.monotonic()
             try:
-                return layout_process(*args, **kwargs)
+                result = layout_process(*args, **kwargs)
+                self.layout_regions.extend(result[0])
+                return result
             except Exception as exc:
                 self.layout_errors.append(f"{type(exc).__name__}: {exc}")
                 raise
@@ -100,6 +102,7 @@ class DocumentParser:
             self.recognition.usage.clear()
             self.layout_errors.clear()
             self.layout_s = 0.0
+            self.layout_regions = []
             start = time.monotonic()
             results = list(self.pipeline.process({"messages": [{"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": data_url}},
@@ -125,6 +128,7 @@ class DocumentParser:
                     "markdown": result.markdown_result or "",
                     "usage": list(self.recognition.usage),
                     "layout_s": self.layout_s,
+                    "layout_regions": self.layout_regions,
                     "coverage": [{"page_index": i,
                                   "skipped_regions": [region for region in page
                                                       if region.get("label") in skip_labels]}
