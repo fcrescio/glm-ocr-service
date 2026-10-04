@@ -41,6 +41,7 @@ class GenerationResult:
     finish_reason: str  # "stop" | "length"
     eos_hit: bool
     e2e_s: float
+    timings: dict = field(default_factory=dict)
 
 
 class _TailStopCriteria:
@@ -125,8 +126,8 @@ class GLMOCRModel:
         """Apply the chat template. `messages` is OpenAI-shaped with image parts
         already resolved to PIL images: {"type":"image","image":PIL} /
         {"type":"text","text":str}. Images are capped to `pixel_cap` here —
-        that is what keeps the vision-token count (and prefill cost) at the
-        validated level (the GLM processor has no pixel cap of its own).
+        when an explicit cap is configured. Otherwise the processor defaults
+        determine image resolution and vision-token count.
         """
         capped = []
         for m in messages:
@@ -181,7 +182,12 @@ class GLMOCRModel:
         raise InferenceError(f"unexpected generate() output type: {type(out)!r}")
 
     def _generate(self, prepared: Prepared, kwargs: dict) -> Any:
-        return self.model.generate(**prepared.inputs, **kwargs)
+        from .profiling import generation_timings
+
+        with generation_timings(self.model) as timings:
+            result = self.model.generate(**prepared.inputs, **kwargs)
+        self._generation_timings = timings
+        return result
 
     def infer(
         self,
@@ -276,4 +282,5 @@ class GLMOCRModel:
                 result.new_tokens / max(e2e, 1e-9),
                 prepared.n_images,
             )
+            result.timings = dict(getattr(self, "_generation_timings", {}))
             return result

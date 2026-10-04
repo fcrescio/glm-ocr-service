@@ -27,8 +27,10 @@ class LocalRecognitionClient:
         from .server import ChatCompletionRequest, normalize_messages
 
         try:
+            start = time.monotonic()
             messages = normalize_messages(ChatCompletionRequest(**payload))
             prepared = self.model.prepare(messages)
+            prepare_s = time.monotonic() - start
             result = self.model.infer(
                 prepared, payload["max_tokens"], payload["temperature"],
                 payload.get("top_p"), repetition_penalty=payload["repetition_penalty"],
@@ -37,7 +39,10 @@ class LocalRecognitionClient:
                 raise InferenceError("Region OCR truncated at token limit")
             self.usage.append({"prompt_tokens": result.prompt_tokens,
                                "completion_tokens": result.new_tokens,
-                               "seconds": result.e2e_s})
+                               "seconds": result.e2e_s,
+                               "prepare_s": prepare_s,
+                               "image_sizes": prepared.image_sizes,
+                               "timings": getattr(result, "timings", {})})
             return {"choices": [{"message": {"content": result.text}}]}, 200
         except Exception as exc:
             self.errors.append(f"{type(exc).__name__}: {exc}")
@@ -73,11 +78,14 @@ class DocumentParser:
         layout_process = self.pipeline.layout_detector.process
 
         def checked_layout(*args, **kwargs):
+            start = time.monotonic()
             try:
                 return layout_process(*args, **kwargs)
             except Exception as exc:
                 self.layout_errors.append(f"{type(exc).__name__}: {exc}")
                 raise
+            finally:
+                self.layout_s += time.monotonic() - start
 
         self.pipeline.layout_detector.process = checked_layout
         self.pipeline.start()
@@ -91,6 +99,7 @@ class DocumentParser:
             self.recognition.errors.clear()
             self.recognition.usage.clear()
             self.layout_errors.clear()
+            self.layout_s = 0.0
             start = time.monotonic()
             results = list(self.pipeline.process({"messages": [{"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": data_url}},
@@ -115,6 +124,11 @@ class DocumentParser:
             return {"pages": pages, "raw_pages": raw,
                     "markdown": result.markdown_result or "",
                     "usage": list(self.recognition.usage),
+                    "layout_s": self.layout_s,
+                    "coverage": [{"page_index": i,
+                                  "skipped_regions": [region for region in page
+                                                      if region.get("label") in skip_labels]}
+                                 for i, page in enumerate(raw)],
                     "seconds": round(time.monotonic() - start, 3),
                     "metadata": {"pipeline": "glmocr-sdk", "layout_model": self.config.layout.model_dir,
                                  "layout_device": "cpu", "pdf_dpi": self.config.page_loader.pdf_dpi,

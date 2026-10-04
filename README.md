@@ -310,3 +310,25 @@ page instead.
 - The GLM-OCR model weights are published by Zai on Hugging Face
   (`zai-org/GLM-OCR`) under **that repository's license — review it before
   commercial use**.
+# Profiling and isolated decoder compression
+
+`/v1/parse` returns per-region `prepare_s`, image dimensions and `timings`:
+`multimodal_s` (vision plus embedding preparation), `prefill_s` (first language
+forward), `decode_s` (remaining language forwards) and `language_calls`.
+These are synchronous host-wall measurements at Optimum boundaries, not
+device-kernel profiling. Preparation is outside generation time; generation
+also includes Python scheduling, sampling and decoding. `layout_s` measures
+layout detection directly. `coverage` lists intentionally skipped regions
+with their native labels and coordinates, not a guarantee of text coverage.
+
+Keep the FP16 baseline intact. To build a separate decoder-only INT8 variant:
+
+```bash
+python scripts/compress_decoder.py --source models/glm-ocr-ov --output models/glm-ocr-int8
+```
+
+This uses NNCF per-channel INT8 asymmetric weight compression; vision and
+embeddings remain unchanged. It refuses existing output directories. Run the
+variant separately with `--model-dir models/glm-ocr-int8`; do not switch the
+production volume before comparing the same crops and critical fields. Model
+directories and document evidence must remain outside Git.
