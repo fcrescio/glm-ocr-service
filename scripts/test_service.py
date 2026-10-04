@@ -80,6 +80,9 @@ class StubModel(GLMOCRModel):
         )
         return Prepared(inputs={}, prompt_tokens=42, n_images=n_images, image_sizes=[])
 
+    def execution_devices(self):
+        return {}
+
     def infer(self, prepared, max_tokens, temperature=0.0, top_p=None, stop=None, stream_cb=None):
         if stream_cb is not None:
             for c in self._chunks:

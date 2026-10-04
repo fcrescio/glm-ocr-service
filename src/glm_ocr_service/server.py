@@ -196,6 +196,7 @@ def build_app(
     model_id: str = "glm-ocr",
     api_key: Optional[str] = None,
     max_tokens_cap: int = 4096,
+    document_parser=None,
 ) -> FastAPI:
     app = FastAPI(title="GLM-OCR OCR service", version="0.1.0")
 
@@ -234,6 +235,8 @@ def build_app(
             "device": model.device,
             "load_s": model.load_s,
             "execution_devices": model.execution_devices() if hasattr(model, "execution_devices") else {},
+            "document_parsing": document_parser is not None,
+            "pixel_cap": model.pixel_cap,
         }
 
     @app.get("/v1/models")
@@ -250,6 +253,29 @@ def build_app(
                 }
             ],
         }
+
+    @app.post("/v1/parse")
+    def parse_document(request: Request, payload: dict):
+        _check_auth(request)
+        if document_parser is None:
+            raise ApiError(503, "Document parser is not enabled", "parser_unavailable")
+        if payload.get("model", model_id) != model_id:
+            raise ApiError(404, "Model not found", "model_not_found")
+        url = payload.get("document")
+        if not isinstance(url, str) or not url.startswith("data:"):
+            raise ApiError(400, "document must be a base64 data URL", "invalid_document")
+        data = _decode_data_url(url)
+        if len(data) > MAX_IMAGE_BYTES:
+            raise ApiError(413, "Document too large", "document_too_large")
+        try:
+            if "max_tokens" in payload:
+                limit = payload["max_tokens"]
+                if type(limit) is not int or not 1 <= limit <= max_tokens_cap:
+                    raise ApiError(400, "Invalid region token limit", "invalid_token_limit")
+                return document_parser.parse(url, max_tokens=limit)
+            return document_parser.parse(url, max_tokens=min(8192, max_tokens_cap))
+        except InferenceError as exc:
+            raise ApiError(502, str(exc), "document_parsing_failed") from exc
 
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request, req: ChatCompletionRequest):

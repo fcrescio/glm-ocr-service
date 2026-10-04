@@ -41,8 +41,9 @@ def main():
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--model-id", default="glm-ocr")
-    ap.add_argument("--max-tokens-cap", type=int, default=4096)
-    ap.add_argument("--pixel-cap", type=int, default=700_000)
+    ap.add_argument("--max-tokens-cap", type=int, default=8192)
+    ap.add_argument("--pixel-cap", type=int, default=0, help="Optional additional image cap; 0 uses the model processor defaults")
+    ap.add_argument("--no-layout", action="store_true", help="Run only the low-level OpenAI recognition endpoint")
     ap.add_argument("--prompt", default="Text Recognition:")
     ap.add_argument("--api-key", default=os.environ.get("GLM_OCR_API_KEY"))
     ap.add_argument("--log-level", default="INFO")
@@ -59,6 +60,13 @@ def main():
         pixel_cap=args.pixel_cap,
         default_prompt=args.prompt,
     )
+    document_parser = None
+    if not args.no_layout:
+        from glm_ocr_service.parsing import DocumentParser
+        import torch
+
+        torch.set_num_threads(min(8, os.cpu_count() or 1))
+        document_parser = DocumentParser(model)
 
     def _force_exit(signum, _frame):
         logging.getLogger("glm_ocr_service").info("signal %d: forcing process exit after grace period", signum)
@@ -71,7 +79,8 @@ def main():
     import uvicorn
 
     uvicorn.run(
-        build_app(model, model_id=args.model_id, api_key=args.api_key, max_tokens_cap=args.max_tokens_cap),
+        build_app(model, model_id=args.model_id, api_key=args.api_key, max_tokens_cap=args.max_tokens_cap,
+                  document_parser=document_parser),
         host=args.host,
         port=args.port,
         log_level="info",

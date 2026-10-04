@@ -13,6 +13,8 @@ services:
       - ./models/glm-ocr-ov:/models/glm-ocr:rw
       - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
       - /usr/lib/wsl/drivers:/usr/lib/wsl/drivers:ro
+      - ./models/hf-cache:/models/hf-cache:rw
     environment:
       LD_LIBRARY_PATH: /usr/lib/wsl/lib
+      HF_HOME: /models/hf-cache
     command: ["--device", "GPU", "--port", "8080"]

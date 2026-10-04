@@ -73,8 +73,9 @@ class DocumentParser:
         self.config = config
         self._lock = threading.Lock()
 
-    def parse(self, data_url):
+    def parse(self, data_url, max_tokens=8192):
         with self._lock:
+            self.pipeline.page_loader.max_tokens = max_tokens
             self.recognition.errors.clear()
             self.recognition.usage.clear()
             self.layout_errors.clear()
@@ -102,4 +103,5 @@ class DocumentParser:
                     "seconds": round(time.monotonic() - start, 3),
                     "metadata": {"pipeline": "glmocr-sdk", "layout_model": self.config.layout.model_dir,
                                  "layout_device": "cpu", "pdf_dpi": self.config.page_loader.pdf_dpi,
-                                 "max_workers": 1, "pixel_cap": self.recognition.model.pixel_cap}}
+                                 "max_workers": 1, "pixel_cap": self.recognition.model.pixel_cap,
+                                 "region_max_tokens": max_tokens}}

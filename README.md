@@ -126,11 +126,56 @@ python scripts/serve.py --model-dir models/glm-ocr-ov --device GPU --port 8080
 ```
 
 Options: `--device GPU|CPU`, `--host`, `--port`, `--model-id`,
-`--max-tokens-cap` (default 4096), `--pixel-cap` (default 700000 — inputs are
-downscaled, never upscaled, to at most this many pixels; dimensions stay
-multiples of 28), `--prompt` (default `"Text Recognition:"`), `--api-key`
+`--max-tokens-cap` (default 8192), `--pixel-cap` (default 0: no extra downscaling;
+the model processor's own limits still apply), `--no-layout` (disable the document
+parser explicitly), `--prompt` (default `"Text Recognition:"`), `--api-key`
 (or the `GLM_OCR_API_KEY` env var). `SIGTERM`/`SIGINT` force a clean process
 exit after a 2 s grace.
+
+## Standard document parsing
+
+The default server loads the official `glmocr` SDK pinned to commit
+`cef4d0ea120d1741f5cefe8985eee45f6c8eff1d`. It uses PP-DocLayoutV3 on **CPU**,
+region cropping, official text/table/formula prompts, PDF rendering at **200 DPI**,
+8192 tokens per region and repetition penalty 1.1. Recognition remains OpenVINO
+on **Intel GPU**; CUDA is not used. `max_workers=1` is intentional: the iGPU runtime
+is single-flight. This is quality alignment, not a claim to reproduce NVIDIA
+benchmark throughput. The SDK's default header/footer filtering is unchanged.
+
+`POST /v1/parse` accepts JSON:
+
+```json
+{"model":"glm-ocr","document":"data:application/pdf;base64,...","max_tokens":8192}
+```
+
+Images are accepted too. Only inline data URLs are accepted by this endpoint,
+with a 40 MB decoded input limit. For long PDFs, callers should split pages to
+bound request time. Authentication is the same as the OpenAI endpoint.
+
+The response contains `pages` (one list of SDK regions per page), `raw_pages`,
+`markdown`, per-region `usage`, elapsed `seconds`, and configuration `metadata`.
+Regions retain labels, reading order and `bbox_2d` coordinates normalized to
+0..1000. Table regions contain HTML, including spans. Image-region references
+in Markdown are SDK references, not independently served crop files; use their
+coordinates and the original document to inspect them.
+
+Recognition calls the local model directly through the SDK client contract;
+no loopback HTTP, cloud calls or alternate OCR fallback. Layout exceptions,
+recognition errors and token-limit truncation fail the document request rather
+than silently returning an incomplete success. `/health` reports whether parsing
+is enabled and the compiled OpenVINO devices. Layout weights are cached separately
+in the Compose `models/hf-cache` volume.
+
+Verification commands (no model needed):
+
+```bash
+docker run --rm --entrypoint python -v "$PWD/scripts:/tests" glm-ocr-service /tests/test_service.py
+docker run --rm --entrypoint python -v "$PWD/scripts:/tests" glm-ocr-service /tests/test_parsing.py
+```
+
+Historical timings above used the old 700k input cap and page-only prompting;
+they must not be presented as timings of the SDK pipeline. Compare source-backed
+cells and layout alongside latency. Keep private PDFs and raw OCR outputs out of Git.
 
 ## Deploying as a container
 
