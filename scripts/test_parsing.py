@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from glm_ocr_service.model import InferenceError
-from glm_ocr_service.parsing import LocalRecognitionClient, sdk_config
+from glm_ocr_service.parsing import DocumentParser, LocalRecognitionClient, sdk_config
 from glm_ocr_service.server import build_app
 
 
@@ -43,6 +43,23 @@ def main():
     assert "header" in archive.layout.label_task_mapping["text"]
     assert "header" not in archive.layout.label_task_mapping["abandon"]
     assert "header" in sdk_config().layout.label_task_mapping["abandon"]
+    import threading
+    raw = [[{"label": "image", "content": None}]]
+    document_parser = DocumentParser.__new__(DocumentParser)
+    document_parser._lock = threading.Lock()
+    document_parser.recognition = SimpleNamespace(errors=[], usage=[], model=SimpleNamespace(pixel_cap=0))
+    document_parser.layout_errors = []
+    document_parser.config = archive
+    document_parser.preserve_marginalia = True
+    result = SimpleNamespace(json_result=raw, raw_json_result=raw, markdown_result="")
+    document_parser.pipeline = SimpleNamespace(page_loader=SimpleNamespace(max_tokens=8192), process=lambda *a, **kw: iter([result]))
+    assert document_parser.parse(url)["pages"] == raw
+    raw[0][0]["label"] = "text"
+    try:
+        document_parser.parse(url)
+        raise AssertionError("Failed textual region was accepted")
+    except InferenceError:
+        pass
     print("Parsing API, SDK defaults, authentication and truncation checks passed")
 
 

@@ -106,7 +106,10 @@ class DocumentParser:
             if not isinstance(pages, list) or not pages:
                 raise InferenceError("SDK returned no pages")
             raw = result.raw_json_result or []
-            if any(region.get("task_type") not in ("skip", "abandon") and region.get("content") is None
+            # SDK raw snapshots omit task_type; classify intentional image skips
+            # by the native label mapping, not by a missing snapshot field.
+            skip_labels = set(self.config.layout.label_task_mapping.get("skip") or [])
+            if any(region.get("label") not in skip_labels and region.get("content") is None
                    for page in raw for region in page):
                 raise InferenceError("SDK returned failed recognition regions")
             return {"pages": pages, "raw_pages": raw,
