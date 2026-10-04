@@ -39,6 +39,8 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         git \
+        intel-opencl-icd \
+        libze1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/glm-ocr-service

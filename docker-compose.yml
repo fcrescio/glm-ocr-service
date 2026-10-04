@@ -1,0 +1,18 @@
+services:
+  glm-ocr:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: glm-ocr-service
+    restart: unless-stopped
+    ports:
+      - "18030:8080"
+    devices:
+      - /dev/dxg:/dev/dxg
+    volumes:
+      - ./models/glm-ocr-ov:/models/glm-ocr:rw
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+      - /usr/lib/wsl/drivers:/usr/lib/wsl/drivers:ro
+    environment:
+      LD_LIBRARY_PATH: /usr/lib/wsl/lib
+    command: ["--device", "GPU", "--port", "8080"]

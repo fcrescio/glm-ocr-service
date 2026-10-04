@@ -134,6 +134,22 @@ exit after a 2 s grace.
 
 ## Deploying as a container
 
+### WSL2 Docker deployment verified on 2026-10-04
+
+The root `docker-compose.yml` exposes port 18030, passes `/dev/dxg`, and mounts
+both `/usr/lib/wsl/lib` and `/usr/lib/wsl/drivers`. The latter is required for
+Intel's Windows user-mode driver: omitting it can crash device enumeration.
+The image includes `intel-opencl-icd` and `libze1`. OpenVINO detects the Intel
+Raptor Lake iGPU (`0xa780`) inside the container; the NVIDIA GPU is not used.
+
+```bash
+docker compose up -d --build
+curl http://localhost:18030/health
+```
+
+This compose is specific to WSL2. On bare-metal Linux use the render-node
+passthrough command below. Model files remain mounted outside the image.
+
 ```bash
 docker build -t glm-ocr-service .        # from the repo root (or: docker/run.sh build)
 ```
