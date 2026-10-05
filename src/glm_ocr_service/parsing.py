@@ -3,7 +3,7 @@ import json
 import threading
 import time
 
-from .model import InferenceError
+from .model import InferenceError, RuntimeUnhealthyError
 
 
 class LocalRecognitionClient:
@@ -104,6 +104,8 @@ class DocumentParser:
 
     def parse(self, data_url, max_tokens=8192):
         with self._lock:
+            if getattr(self.recognition.model, "runtime_error", None):
+                raise RuntimeUnhealthyError(self.recognition.model.runtime_error)
             self.pipeline.page_loader.max_tokens = max_tokens
             self.recognition.errors.clear()
             self.recognition.usage.clear()
@@ -114,6 +116,8 @@ class DocumentParser:
             results = list(self.pipeline.process({"messages": [{"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": data_url}},
             ]}]}, save_layout_visualization=False))
+            if getattr(self.recognition.model, "runtime_error", None):
+                raise RuntimeUnhealthyError(self.recognition.model.runtime_error)
             if self.recognition.errors or self.layout_errors:
                 raise InferenceError("; ".join(self.recognition.errors + self.layout_errors))
             if len(results) != 1:
@@ -147,4 +151,6 @@ class DocumentParser:
                                  "region_max_tokens": max_tokens,
                                  "layout_threshold": self.config.layout.threshold,
                                  "layout_threshold_by_class": self.config.layout.threshold_by_class,
+                                 "compact_vision_mask": getattr(self.recognition.model, "compact_vision_mask", False),
+                                 "last_token_logits": getattr(self.recognition.model, "last_token_logits", False),
                                  "preserve_marginalia": self.preserve_marginalia}}

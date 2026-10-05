@@ -229,7 +229,7 @@ def build_app(
 
     @app.get("/health")
     def health():
-        return {
+        info = {
             "status": "ok" if model.loaded else "loading",
             "model": model_id,
             "device": model.device,
@@ -237,11 +237,20 @@ def build_app(
             "execution_devices": model.execution_devices() if hasattr(model, "execution_devices") else {},
             "document_parsing": document_parser is not None,
             "pixel_cap": model.pixel_cap,
+            "runtime_error": getattr(model, "runtime_error", None),
+            "compact_vision_mask": getattr(model, "compact_vision_mask", False),
+            "last_token_logits": getattr(model, "last_token_logits", False),
         }
+        if info["runtime_error"]:
+            info["status"] = "unhealthy"
+            return JSONResponse(info, status_code=503)
+        return info
 
     @app.get("/v1/models")
     def models(request: Request):
         _check_auth(request)
+        if getattr(model, "runtime_error", None):
+            raise ApiError(503, "Inference runtime requires restart", "runtime_unhealthy")
         return {
             "object": "list",
             "data": [
@@ -257,6 +266,8 @@ def build_app(
     @app.post("/v1/parse")
     def parse_document(request: Request, payload: dict):
         _check_auth(request)
+        if getattr(model, "runtime_error", None):
+            raise ApiError(503, model.runtime_error, "runtime_unhealthy")
         if document_parser is None:
             raise ApiError(503, "Document parser is not enabled", "parser_unavailable")
         if payload.get("model", model_id) != model_id:
@@ -275,11 +286,15 @@ def build_app(
                 return document_parser.parse(url, max_tokens=limit)
             return document_parser.parse(url, max_tokens=min(8192, max_tokens_cap))
         except InferenceError as exc:
+            if getattr(model, "runtime_error", None):
+                raise ApiError(503, str(exc), "runtime_unhealthy") from exc
             raise ApiError(502, str(exc), "document_parsing_failed") from exc
 
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request, req: ChatCompletionRequest):
         _check_auth(request)
+        if getattr(model, "runtime_error", None):
+            return _err_response(503, model.runtime_error, "runtime_unhealthy")
         if req.model not in (model_id, "glm-ocr", ""):
             return _err_response(404, f"model '{req.model}' not found", "model_not_found", err_type="invalid_request_error")
 

@@ -1,6 +1,6 @@
 """GLM-OCR OpenVINO session: load once, single-flight inference, token streaming.
 
-Wraps the proven official optimum-intel GLM-OCR export (4-part OV, fp16):
+Wraps the official optimum-intel GLM-OCR export (four OpenVINO components):
 one process, one OpenVINO plugin, all components compiled once. Generation is
 serialized with a process-wide lock (the iGPU cannot run two heavy inferences
 at once; OV inference is not thread-safe).
@@ -21,6 +21,10 @@ log = logging.getLogger("glm_ocr_service.model")
 
 class InferenceError(RuntimeError):
     """Raised when preprocessing or OV generation fails."""
+
+
+class RuntimeUnhealthyError(InferenceError):
+    """Inference state cannot be trusted until the process is restarted."""
 
 
 @dataclass
@@ -74,6 +78,9 @@ class GLMOCRModel:
         device: str = "GPU",
         pixel_cap: int = 0,
         default_prompt: str = "Text Recognition:",
+        ov_config: Optional[dict] = None,
+        compact_vision_mask: bool = False,
+        last_token_logits: bool = False,
     ):
         from transformers import AutoProcessor
         from optimum.intel.openvino import OVModelForVisualCausalLM
@@ -82,13 +89,29 @@ class GLMOCRModel:
         self.device = device
         self.pixel_cap = pixel_cap
         self.default_prompt = default_prompt
+        self.ov_config = dict(ov_config or {})
+        self.compact_vision_mask = compact_vision_mask
+        self.last_token_logits = last_token_logits
+        self.runtime_error = None
         self.loaded = False
         self.load_s = 0.0
         self._lock = threading.Lock()
 
         t0 = time.time()
         self.processor = AutoProcessor.from_pretrained(model_dir, trust_remote_code=True)
-        self.model = OVModelForVisualCausalLM.from_pretrained(model_dir, device=device)
+        self.model = OVModelForVisualCausalLM.from_pretrained(model_dir, device=device,
+                                                            ov_config=self.ov_config,
+                                                            compile=not last_token_logits)
+        if last_token_logits:
+            from .generation_graph import last_token_logits as optimize_logits
+
+            optimize_logits(self.model.language_model.model)
+            self.model.compile()
+        if compact_vision_mask:
+            from types import MethodType
+            from .vision import compact_vision_embeddings
+
+            self.model.get_vision_embeddings = MethodType(compact_vision_embeddings, self.model)
         self.tokenizer = (
             self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
         )
@@ -184,8 +207,12 @@ class GLMOCRModel:
     def _generate(self, prepared: Prepared, kwargs: dict) -> Any:
         from .profiling import generation_timings
 
-        with generation_timings(self.model) as timings:
-            result = self.model.generate(**prepared.inputs, **kwargs)
+        try:
+            with generation_timings(self.model) as timings:
+                result = self.model.generate(**prepared.inputs, **kwargs)
+        except Exception as exc:
+            self.runtime_error = f"{type(exc).__name__}: {exc}"
+            raise RuntimeUnhealthyError(self.runtime_error) from exc
         self._generation_timings = timings
         return result
 
@@ -204,6 +231,8 @@ class GLMOCRModel:
         returned for an exact token count.
         """
         with self._lock:
+            if getattr(self, "runtime_error", None):
+                raise RuntimeUnhealthyError(f"Restart required after inference failure: {self.runtime_error}")
             kwargs: dict = {
                 "max_new_tokens": max_tokens,
                 "num_beams": 1,
@@ -243,6 +272,7 @@ class GLMOCRModel:
                         box["out"] = self._generate(prepared, kwargs)
                     except Exception as exc:  # noqa: BLE001
                         box["err"] = exc
+                        streamer.end()
 
                 th = threading.Thread(target=_run, daemon=True)
                 th.start()

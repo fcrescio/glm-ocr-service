@@ -47,6 +47,10 @@ def main():
     ap.add_argument("--preserve-marginalia", action="store_true", help="Recognize textual headers/footers instead of the SDK's default exclusion")
     ap.add_argument("--layout-text-threshold", type=float,
                     help="Experimental textual-class threshold; table/image thresholds unchanged")
+    ap.add_argument("--compact-vision-mask", action="store_true",
+                    help="Use equivalent broadcast mask for single-image vision attention")
+    ap.add_argument("--last-token-logits", action="store_true",
+                    help="Generation-only vocabulary head on the final hidden token")
     ap.add_argument("--prompt", default="Text Recognition:")
     ap.add_argument("--api-key", default=os.environ.get("GLM_OCR_API_KEY"))
     ap.add_argument("--log-level", default="INFO")
@@ -64,6 +68,8 @@ def main():
         device=args.device,
         pixel_cap=args.pixel_cap,
         default_prompt=args.prompt,
+        compact_vision_mask=args.compact_vision_mask,
+        last_token_logits=args.last_token_logits,
     )
     document_parser = None
     if not args.no_layout:
