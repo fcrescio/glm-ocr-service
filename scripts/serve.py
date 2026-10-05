@@ -52,9 +52,16 @@ def main():
     ap.add_argument("--last-token-logits", action="store_true",
                     help="Generation-only vocabulary head on the final hidden token")
     ap.add_argument("--prompt", default="Text Recognition:")
+    ap.add_argument("--no-loop-detection", action="store_true")
+    ap.add_argument("--region-timeout", type=float, default=0,
+                    help="Cooperative per-region timeout in seconds; 0 disables it")
+    ap.add_argument("--failure-dir", help="Private directory for rejected region payloads and partial text")
     ap.add_argument("--api-key", default=os.environ.get("GLM_OCR_API_KEY"))
     ap.add_argument("--log-level", default="INFO")
     args = ap.parse_args()
+    import math
+    if not math.isfinite(args.region_timeout) or args.region_timeout < 0:
+        ap.error("region timeout must be nonnegative")
     if args.layout_text_threshold is not None and not 0 < args.layout_text_threshold <= 1:
         ap.error("layout text threshold must be in (0, 1]")
 
@@ -70,6 +77,8 @@ def main():
         default_prompt=args.prompt,
         compact_vision_mask=args.compact_vision_mask,
         last_token_logits=args.last_token_logits,
+        detect_loops=not args.no_loop_detection,
+        region_timeout_s=args.region_timeout,
     )
     document_parser = None
     if not args.no_layout:
@@ -78,7 +87,8 @@ def main():
 
         torch.set_num_threads(min(8, os.cpu_count() or 1))
         document_parser = DocumentParser(model, preserve_marginalia=args.preserve_marginalia,
-                                        text_threshold=args.layout_text_threshold)
+                                        text_threshold=args.layout_text_threshold,
+                                        failure_dir=args.failure_dir)
 
     def _force_exit(signum, _frame):
         logging.getLogger("glm_ocr_service").info("signal %d: forcing process exit after grace period", signum)

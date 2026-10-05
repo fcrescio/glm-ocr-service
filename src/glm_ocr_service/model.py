@@ -27,6 +27,15 @@ class RuntimeUnhealthyError(InferenceError):
     """Inference state cannot be trusted until the process is restarted."""
 
 
+class GenerationStoppedError(InferenceError):
+    """Controlled generation stop, not a failed OpenVINO runtime."""
+
+    def __init__(self, reason, details):
+        self.reason = reason
+        self.details = details
+        super().__init__(f"{reason}: {details}")
+
+
 @dataclass
 class Prepared:
     """Preprocessed prompt ready for generation (thread-safe to pass around)."""
@@ -46,6 +55,7 @@ class GenerationResult:
     eos_hit: bool
     e2e_s: float
     timings: dict = field(default_factory=dict)
+    stop_details: dict = field(default_factory=dict)
 
 
 class _TailStopCriteria:
@@ -81,6 +91,8 @@ class GLMOCRModel:
         ov_config: Optional[dict] = None,
         compact_vision_mask: bool = False,
         last_token_logits: bool = False,
+        detect_loops: bool = True,
+        region_timeout_s: float = 0,
     ):
         from transformers import AutoProcessor
         from optimum.intel.openvino import OVModelForVisualCausalLM
@@ -93,6 +105,8 @@ class GLMOCRModel:
         self.compact_vision_mask = compact_vision_mask
         self.last_token_logits = last_token_logits
         self.runtime_error = None
+        self.detect_loops = detect_loops
+        self.region_timeout_s = region_timeout_s
         self.loaded = False
         self.load_s = 0.0
         self._lock = threading.Lock()
@@ -243,10 +257,16 @@ class GLMOCRModel:
                 kwargs["temperature"] = temperature
                 if top_p is not None and top_p < 1.0:
                     kwargs["top_p"] = top_p
-            if stop:
-                from transformers import StoppingCriteriaList
+            from transformers import StoppingCriteriaList
+            from .generation_guard import GenerationGuard
 
-                kwargs["stopping_criteria"] = StoppingCriteriaList([_TailStopCriteria(self.tokenizer, stop)])
+            guard = GenerationGuard(prepared.prompt_tokens,
+                                    getattr(self, "region_timeout_s", 0),
+                                    getattr(self, "detect_loops", True))
+            criteria = [guard]
+            if stop:
+                criteria.append(_TailStopCriteria(self.tokenizer, stop))
+            kwargs["stopping_criteria"] = StoppingCriteriaList(criteria)
 
             t0 = time.time()
             if stream_cb is None:
@@ -303,6 +323,11 @@ class GLMOCRModel:
                     eos_hit,
                     e2e,
                 )
+            if guard.reason:
+                result.finish_reason = guard.reason
+                result.eos_hit = False
+                result.stop_details = guard.details
+                log.warning("generation stopped: %s %s", guard.reason, guard.details)
             log.info(
                 "generate: prompt_tokens=%d new_tokens=%d finish=%s e2e=%.2fs tps=%.2f images=%d",
                 result.prompt_tokens,

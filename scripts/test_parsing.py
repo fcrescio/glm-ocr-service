@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from glm_ocr_service.model import InferenceError, RuntimeUnhealthyError
+from glm_ocr_service.model import InferenceError, RuntimeUnhealthyError, GenerationStoppedError
 from glm_ocr_service.parsing import DocumentParser, LocalRecognitionClient, sdk_config
 from glm_ocr_service.server import build_app
 
@@ -85,6 +85,30 @@ def main():
         except RuntimeUnhealthyError:
             pass
     assert len(calls) == 1
+    def controlled_failure(url, **kwargs):
+        raise GenerationStoppedError("generation_loop", {"generated_tokens": 560})
+    model.runtime_error = None
+    parser.parse = controlled_failure
+    response = client.post("/v1/parse", headers=headers, json={"document": url})
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "generation_loop"
+    assert client.get("/health").status_code == 200
+    import tempfile
+    import json
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as directory:
+        result = SimpleNamespace(finish_reason="generation_loop", text="partial", new_tokens=560,
+                                 e2e_s=30, stop_details={"period_tokens": 15})
+        recorder = LocalRecognitionClient(SimpleNamespace(prepare=lambda messages: SimpleNamespace(image_sizes=[[10, 10]]),
+            loaded=True, infer=lambda *a, **kw: result), failure_dir=directory)
+        payload = {"messages": [{"role": "user", "content": "Text Recognition:"}],
+                   "max_tokens": 8192, "temperature": 0, "repetition_penalty": 1.1}
+        with patch("glm_ocr_service.server.normalize_messages", return_value=[]):
+            response, status = recorder.process(payload)
+        assert status == 500 and recorder.stopped[0].reason == "generation_loop"
+        paths = list(Path(directory).glob("*.json"))
+        assert len(paths) == 1 and paths[0].stat().st_mode & 0o777 == 0o600
+        assert json.loads(paths[0].read_text())["request"] == payload
     print("Parsing API, SDK defaults, authentication and truncation checks passed")
 
 

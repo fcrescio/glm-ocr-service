@@ -33,7 +33,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from .model import GLMOCRModel, InferenceError, Prepared
+from .model import GLMOCRModel, InferenceError, Prepared, GenerationStoppedError
 
 log = logging.getLogger("glm_ocr_service.server")
 
@@ -238,6 +238,8 @@ def build_app(
             "document_parsing": document_parser is not None,
             "pixel_cap": model.pixel_cap,
             "runtime_error": getattr(model, "runtime_error", None),
+            "loop_detection": getattr(model, "detect_loops", True),
+            "region_timeout_s": getattr(model, "region_timeout_s", 0),
             "compact_vision_mask": getattr(model, "compact_vision_mask", False),
             "last_token_logits": getattr(model, "last_token_logits", False),
         }
@@ -286,6 +288,8 @@ def build_app(
                 return document_parser.parse(url, max_tokens=limit)
             return document_parser.parse(url, max_tokens=min(8192, max_tokens_cap))
         except InferenceError as exc:
+            if isinstance(exc, GenerationStoppedError):
+                raise ApiError(502, str(exc), exc.reason) from exc
             if getattr(model, "runtime_error", None):
                 raise ApiError(503, str(exc), "runtime_unhealthy") from exc
             raise ApiError(502, str(exc), "document_parsing_failed") from exc
@@ -334,6 +338,8 @@ def build_app(
                 res = await asyncio.to_thread(_sync)
             except InferenceError as e:
                 return _err_response(500, str(e), "inference_failed", err_type="server_error")
+            if res.finish_reason in {"generation_loop", "generation_timeout"}:
+                return _err_response(502, str(res.stop_details), res.finish_reason, err_type="server_error")
             log.info(
                 "request %s done: images=%d prompt_tokens=%d new_tokens=%d finish=%s e2e=%.2fs",
                 request_id, prepared.n_images, res.prompt_tokens, res.new_tokens, res.finish_reason, time.time() - t0,
@@ -399,6 +405,10 @@ def build_app(
                         yield "data: " + json.dumps(chunk, ensure_ascii=False) + "\n\n"
                     else:  # GenerationResult -> final chunk (+ optional usage)
                         res = item
+                        if res.finish_reason in {"generation_loop", "generation_timeout"}:
+                            yield "data: " + json.dumps({"error": {"message": str(res.stop_details),
+                                "type": "server_error", "code": res.finish_reason}}) + "\n\n"
+                            continue
                         yield "data: " + json.dumps(
                             {
                                 "id": request_id,

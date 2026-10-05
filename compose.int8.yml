@@ -3,4 +3,8 @@ services:
   glm-ocr:
     volumes:
       - ./models/glm-ocr-int8:/models/glm-ocr:rw
-    command: ["--device", "GPU", "--port", "8080", "--preserve-marginalia", "--compact-vision-mask", "--last-token-logits"]
+      - ocr-failures:/var/lib/glm-ocr-failures
+    command: ["--device", "GPU", "--port", "8080", "--preserve-marginalia", "--compact-vision-mask", "--last-token-logits", "--region-timeout", "600", "--failure-dir", "/var/lib/glm-ocr-failures/regions"]
+
+volumes:
+  ocr-failures:

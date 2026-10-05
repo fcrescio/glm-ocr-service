@@ -3,16 +3,18 @@ import json
 import threading
 import time
 
-from .model import InferenceError, RuntimeUnhealthyError
+from .model import InferenceError, RuntimeUnhealthyError, GenerationStoppedError
 
 
 class LocalRecognitionClient:
     """SDK OCRClient contract, without a loopback HTTP queue or cloud calls."""
 
-    def __init__(self, model):
+    def __init__(self, model, failure_dir=None):
         self.model = model
         self.errors = []
         self.usage = []
+        self.failure_dir = failure_dir
+        self.stopped = []
 
     def start(self):
         pass
@@ -35,6 +37,23 @@ class LocalRecognitionClient:
                 prepared, payload["max_tokens"], payload["temperature"],
                 payload.get("top_p"), repetition_penalty=payload["repetition_penalty"],
             )
+            if result.finish_reason in {"generation_loop", "generation_timeout", "length"} and self.failure_dir:
+                from pathlib import Path
+                import os
+                import uuid
+
+                directory = Path(self.failure_dir)
+                directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+                path = directory / f"{uuid.uuid4()}.json"
+                with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as stream:
+                    json.dump({"request": payload, "text": result.text,
+                               "finish_reason": result.finish_reason, "tokens": result.new_tokens,
+                               "seconds": result.e2e_s, "details": getattr(result, "stop_details", {}),
+                               "image_sizes": prepared.image_sizes}, stream)
+            if result.finish_reason in {"generation_loop", "generation_timeout"}:
+                error = GenerationStoppedError(result.finish_reason, result.stop_details)
+                self.stopped.append(error)
+                raise error
             if result.finish_reason == "length":
                 raise InferenceError("Region OCR truncated at token limit")
             self.usage.append({"prompt_tokens": result.prompt_tokens,
@@ -72,14 +91,14 @@ def sdk_config(preserve_marginalia=False, text_threshold=None):
 
 
 class DocumentParser:
-    def __init__(self, model, preserve_marginalia=False, text_threshold=None):
+    def __init__(self, model, preserve_marginalia=False, text_threshold=None, failure_dir=None):
         from glmocr.pipeline import Pipeline
 
         config = sdk_config(preserve_marginalia, text_threshold)
         # Keep official task prompts, 200 DPI, 8192 tokens and repetition penalty.
         # The iGPU runtime is single-flight; do not queue 32 concurrent regions.
         self.pipeline = Pipeline(config)
-        self.recognition = LocalRecognitionClient(model)
+        self.recognition = LocalRecognitionClient(model, failure_dir)
         self.pipeline.ocr_client = self.recognition
         self.layout_errors = []
         layout_process = self.pipeline.layout_detector.process
@@ -109,6 +128,7 @@ class DocumentParser:
             self.pipeline.page_loader.max_tokens = max_tokens
             self.recognition.errors.clear()
             self.recognition.usage.clear()
+            getattr(self.recognition, "stopped", []).clear()
             self.layout_errors.clear()
             self.layout_s = 0.0
             self.layout_regions = []
@@ -118,6 +138,8 @@ class DocumentParser:
             ]}]}, save_layout_visualization=False))
             if getattr(self.recognition.model, "runtime_error", None):
                 raise RuntimeUnhealthyError(self.recognition.model.runtime_error)
+            if getattr(self.recognition, "stopped", []):
+                raise self.recognition.stopped[0]
             if self.recognition.errors or self.layout_errors:
                 raise InferenceError("; ".join(self.recognition.errors + self.layout_errors))
             if len(results) != 1:
@@ -153,4 +175,6 @@ class DocumentParser:
                                  "layout_threshold_by_class": self.config.layout.threshold_by_class,
                                  "compact_vision_mask": getattr(self.recognition.model, "compact_vision_mask", False),
                                  "last_token_logits": getattr(self.recognition.model, "last_token_logits", False),
+                                 "loop_detection": getattr(self.recognition.model, "detect_loops", True),
+                                 "region_timeout_s": getattr(self.recognition.model, "region_timeout_s", 0),
                                  "preserve_marginalia": self.preserve_marginalia}}
