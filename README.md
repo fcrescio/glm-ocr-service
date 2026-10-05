@@ -350,3 +350,9 @@ Output truncation is still an extraction failure, not a healthy complete page.
 See [controlled diagnostics and reproduction](docs/igpu-allocation-diagnostic-2026-10-05.md)
 for measured causes, regression checks and unresolved errors. These changes do
 not establish corpus-wide OCR quality.
+
+The selected runtime also has an [OCR generation guard](docs/generation-guard.md).
+Exact long token cycles stop inside the decoder and return `generation_loop`,
+not a successful partial extraction. The INT8 override adds a cooperative
+600-second region deadline and persists rejected crops/outputs in a private
+Docker volume. A healthy guard stop does not require restarting the model.

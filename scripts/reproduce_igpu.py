@@ -18,6 +18,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--model-dir", required=True)
     ap.add_argument("--pdf", type=Path)
+    ap.add_argument("--failed-corpus", type=Path, help="Replay failed INT8 pages from a private corpus experiment")
     ap.add_argument("--page", type=int, default=1)
     ap.add_argument("--payload", type=Path, help="Replay one exact SDK recognition request instead of layout")
     ap.add_argument("--output", type=Path, required=True)
@@ -30,26 +31,44 @@ def main():
     ap.add_argument("--unsafe-after-error", action="store_true",
                     help="Diagnostic only: deliberately reuse a failed runtime for the control")
     ap.add_argument("--no-kv-inspection", action="store_true")
+    ap.add_argument("--no-loop-detection", action="store_true")
+    ap.add_argument("--region-timeout", type=float, default=0)
     args = ap.parse_args()
     root = Path(__file__).resolve().parents[1]
     if args.output.resolve() == root or root in args.output.resolve().parents:
         ap.error("Evidence must remain outside the Git checkout")
     if args.output.exists():
         ap.error("Output must be new")
-    if bool(args.pdf) == bool(args.payload):
-        ap.error("Choose exactly one of --pdf or --payload")
+    if sum(bool(value) for value in (args.pdf, args.payload, args.failed_corpus)) != 1:
+        ap.error("Choose exactly one of --pdf, --payload or --failed-corpus")
     if args.pdf and not args.pdf.is_file():
         ap.error("PDF does not exist")
     if args.payload and not args.payload.is_file():
         ap.error("Payload does not exist")
+    targets = [{"pdf": args.pdf, "page": args.page}]
+    if args.failed_corpus:
+        targets = []
+        for path in sorted(args.failed_corpus.glob("*/pair-*.json")):
+            record = json.loads(path.read_text())
+            if record.get("int8", {}).get("status") == "failed":
+                targets.append({"pdf": path.parent / "normalized.pdf", "page": record["page"],
+                                "case": record["ocr_result_id"]})
+        if not targets:
+            ap.error("No failed INT8 pages found")
     if args.repeat < 1 or args.page < 1 or not 1 <= args.max_tokens <= 8192:
         ap.error("Positive repeat/page and max tokens in 1..8192 required")
+    import math
+    if not math.isfinite(args.region_timeout) or args.region_timeout < 0:
+        ap.error("Region timeout must be finite and nonnegative")
     args.output.mkdir(parents=True, mode=0o700)
     torch.set_num_threads(8)
     model = GLMOCRModel(args.model_dir, ov_config={"GPU_ENABLE_LARGE_ALLOCATIONS": True}
                         if args.large_allocations else None, compact_vision_mask=args.compact_mask,
                         last_token_logits=args.last_token_logits)
-    parser = DocumentParser(model, preserve_marginalia=True)
+    model.detect_loops = not args.no_loop_detection
+    model.region_timeout_s = args.region_timeout
+    parser = DocumentParser(model, preserve_marginalia=True,
+                            failure_dir=args.output / "rejected-regions")
     from optimum.intel.openvino.modeling_base import core
 
     def state():
@@ -72,6 +91,7 @@ def main():
         print(json.dumps(event, default=str), flush=True)
 
     emit({"event": "device", "devices": model.execution_devices(),
+          "loop_detection": model.detect_loops, "region_timeout_s": model.region_timeout_s,
           "total_mem": core.get_property("GPU", "GPU_DEVICE_TOTAL_MEM_SIZE"),
           "max_alloc": core.get_property("GPU", "GPU_DEVICE_MAX_ALLOC_MEM_SIZE"), "state": state()})
     for obj, method, phase in ((model.model, "get_multimodal_embeddings", "multimodal"),
@@ -131,8 +151,9 @@ def main():
             emit({"event": label, "status": "failed", "error": str(exc), "state": state()})
 
     control("control_before")
-    for iteration in range(args.repeat):
+    for iteration, target in enumerate(targets * args.repeat):
         start = time.monotonic()
+        emit({"event": "input_start", "iteration": iteration, **target})
         try:
             if args.payload:
                 payload = json.loads(args.payload.read_text())
@@ -141,8 +162,8 @@ def main():
                 if status != 200:
                     raise RuntimeError(result)
             else:
-                with fitz.open(args.pdf) as pdf:
-                    png = pdf[args.page-1].get_pixmap(matrix=fitz.Matrix(200/72, 200/72), alpha=False).tobytes("png")
+                with fitz.open(target["pdf"]) as pdf:
+                    png = pdf[target["page"]-1].get_pixmap(matrix=fitz.Matrix(200/72, 200/72), alpha=False).tobytes("png")
                 result = parser.parse("data:image/png;base64," + base64.b64encode(png).decode(), args.max_tokens)
                 (args.output / f"parse-{iteration}.json").write_text(json.dumps(result))
             emit({"event": "input_result", "iteration": iteration, "status": "ok", "seconds": time.monotonic()-start})
