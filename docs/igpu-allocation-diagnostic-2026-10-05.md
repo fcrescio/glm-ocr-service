@@ -110,8 +110,16 @@ configuration. Fingerprint benchmark models with the same two optimization flags
   shape error to that cause would exceed the evidence.
 - The old USM allocation failures are not all proven to be single-object failures.
   Multiple resident models are a confounder, not a demonstrated cause for each.
-- The original 8192-token truncation needs its own text/layout diagnosis. Memory
-  changes do not establish that repetition or missed stop tokens are resolved.
+- The original 8192-token truncation is reproduced with the fixed runtime and
+  the standard SDK settings: the table region generates 544 identical empty HTML
+  rows, never closes the table and reaches `length` after 446.70 seconds.
+  The entire page takes 455.57 seconds and fails correctly; the following control
+  succeeds in 0.70 seconds. This is a generation loop, not GPU unavailability.
+  The exact region request and truncated output are saved in
+  `truncation-fixed-runtime/`. The scan is visually faint and contains mirrored
+  content, but that observation alone does **not** prove why generation loops.
+  Increasing the token budget is not a verified correction. A replay with the
+  saved payload allows separate prompt/model hypothesis tests on identical input.
 - Full-page vision remains expensive. These are correctness/memory fixes, not
   evidence that large-page latency is acceptable.
 - A corpus comparison must report coverage and isolated extraction errors as well
@@ -120,3 +128,14 @@ configuration. Fingerprint benchmark models with the same two optimization flags
 The new Megadoc runner stops on unavailable/unhealthy backends after persisting
 the failed page. Healthy isolated 502 extraction failures remain measurable and
 do not turn the rest of the corpus into a cascade of invalid observations.
+
+## New corpus run
+
+The INT8-only comparison was launched against the deployed single-resident
+service on 18030, with both memory transformations enabled. Its private evidence
+directory is `~/megadoc-ocr-benchmarks/2026-10-05-corpus-int8/`: 49 archived dots
+results, 48 documents and 321 pages, with original accepted order/orientation.
+This is a new experiment; it does not overwrite the old run or database OCR.
+The decoder, remaining components and deployed image ID are fingerprinted.
+Quality conclusions must wait for its coverage and source-level disagreement
+review. The confirmed generation-loop case is still expected to fail extraction.
