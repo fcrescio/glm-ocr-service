@@ -232,13 +232,11 @@ Operational notes:
   set a tight `--memory` cap (leave unset or ≥ 8 GB).
 - The image has a `HEALTHCHECK` on `/health`; the first request after start
   pays any residual compilation time.
-- **WSL2 caveat (measured on the originating machine):** WSL2 exposes the
-  iGPU as a virtualized pool with a fluctuating size (~3.3–4 GB); OpenVINO
-  GPU *can* run under it, but GPU pass-through from a WSL2 container is
-  *not* the supported path — for WSL2 run the service natively in the
-  WSL2 venv (the `--device GPU` venv path is the one that is measured
-  here). On bare-metal Linux, `--device /dev/dri/...` is the standard
-  iGPU container path.
+- **WSL2:** the current Compose setup uses `/dev/dxg` plus the WSL driver
+  libraries and has been verified on the originating UHD 770. Reported total
+  memory is not the maximum allocation size: this device reports a 1 GiB
+  single-object limit. See the controlled diagnostics below. On bare-metal
+  Linux, `--device /dev/dri/...` is the standard iGPU container path.
 
 ## API
 
@@ -338,3 +336,17 @@ embeddings remain unchanged. It refuses existing output directories. Run the
 variant separately with `--model-dir models/glm-ocr-int8`; do not switch the
 production volume before comparing the same crops and critical fields. Model
 directories and document evidence must remain outside Git.
+
+For the verified single-resident INT8 setup with generation memory reductions:
+
+```bash
+docker compose -f docker-compose.yml -f compose.int8.yml up -d --build glm-ocr
+```
+
+The override enables `--compact-vision-mask` and `--last-token-logits`, avoiding
+large intermediate allocations without resizing input images. GPU generation
+errors latch an unhealthy runtime: restart explicitly instead of reusing it.
+Output truncation is still an extraction failure, not a healthy complete page.
+See [controlled diagnostics and reproduction](docs/igpu-allocation-diagnostic-2026-10-05.md)
+for measured causes, regression checks and unresolved errors. These changes do
+not establish corpus-wide OCR quality.
