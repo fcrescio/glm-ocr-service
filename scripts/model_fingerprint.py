@@ -25,6 +25,8 @@ def main():
     parser.add_argument("--int8", required=True, type=Path)
     parser.add_argument("--runtime-image", required=True)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--compact-vision-mask", action="store_true")
+    parser.add_argument("--last-token-logits", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     if args.output.resolve() == root or root in args.output.resolve().parents:
@@ -40,7 +42,9 @@ def main():
     result = {"runtime_image": args.runtime_image, "variants": {"fp16": fp16, "int8": int8},
               "expected_parse_metadata": {"pipeline": "glmocr-sdk", "layout_device": "cpu",
                   "max_workers": 1, "pixel_cap": 0, "preserve_marginalia": True,
-                  "layout_threshold": 0.3, "layout_threshold_by_class": None}}
+                  "layout_threshold": 0.3, "layout_threshold_by_class": None,
+                  "compact_vision_mask": args.compact_vision_mask,
+                  "last_token_logits": args.last_token_logits}}
     args.output.write_text(json.dumps(result, indent=2) + "\n")
     print(f"Model fingerprints saved to {args.output}")
 

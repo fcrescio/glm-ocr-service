@@ -1,0 +1,6 @@
+# Optional single-resident INT8 runtime, with exact generation memory reductions.
+services:
+  glm-ocr:
+    volumes:
+      - ./models/glm-ocr-int8:/models/glm-ocr:rw
+    command: ["--device", "GPU", "--port", "8080", "--preserve-marginalia", "--compact-vision-mask", "--last-token-logits"]

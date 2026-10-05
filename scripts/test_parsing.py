@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from glm_ocr_service.model import InferenceError
+from glm_ocr_service.model import InferenceError, RuntimeUnhealthyError
 from glm_ocr_service.parsing import DocumentParser, LocalRecognitionClient, sdk_config
 from glm_ocr_service.server import build_app
 
@@ -71,6 +71,20 @@ def main():
         raise AssertionError("Failed textual region was accepted")
     except InferenceError:
         pass
+    raw[0][0]["label"] = "image"
+    calls = []
+    def swallowed_failure(*args, **kwargs):
+        calls.append(True)
+        document_parser.recognition.model.runtime_error = "GPU error swallowed by SDK"
+        return iter([result])
+    document_parser.pipeline.process = swallowed_failure
+    for _ in range(2):
+        try:
+            document_parser.parse(url)
+            raise AssertionError("Partial result accepted after fatal runtime error")
+        except RuntimeUnhealthyError:
+            pass
+    assert len(calls) == 1
     print("Parsing API, SDK defaults, authentication and truncation checks passed")
 
 

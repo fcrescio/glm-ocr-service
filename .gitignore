@@ -6,6 +6,7 @@ venv/
 models/
 tests/*.log
 *.log
+kernel.errors.txt
 
 # setuptools bdist leftovers from editable installs
 build/
